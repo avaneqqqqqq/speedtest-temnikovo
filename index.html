@@ -1,0 +1,1699 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="dark" />
+<title>Спидометр — тест скорости интернета</title>
+<meta name="description" content="Браузерный тест скорости интернета: загрузка, выгрузка, пинг и джиттер через сеть Cloudflare." />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%23070b14'/%3E%3Cpath d='M16 5l9 13h-6l2 9-9-13h6z' fill='%2338e1ff'/%3E%3C/svg%3E" />
+<style>
+/* Спидометр — оформление */
+:root {
+  --bg: #060a12;
+  --card: rgba(15, 23, 39, 0.66);
+  --card-solid: #0d1526;
+  --line: rgba(255, 255, 255, 0.085);
+  --line-strong: rgba(255, 255, 255, 0.16);
+  --text: #e9effb;
+  --muted: #8b9bb6;
+  --muted-2: #6d7c95;
+  --down: #38e1ff;
+  --up: #a78bfa;
+  --ping: #ffd166;
+  --danger: #ff7288;
+  --radius: 22px;
+  --shadow: 0 24px 70px -30px rgba(0, 0, 0, 0.9);
+}
+
+* { box-sizing: border-box; }
+
+html, body { height: 100%; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: "Inter", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
+}
+
+/* ————— фон ————— */
+.bg {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  background:
+    radial-gradient(1100px 700px at 12% -12%, rgba(56, 225, 255, 0.13), transparent 62%),
+    radial-gradient(900px 700px at 92% -8%, rgba(167, 139, 250, 0.13), transparent 58%),
+    radial-gradient(900px 620px at 50% 118%, rgba(56, 225, 255, 0.05), transparent 62%);
+}
+.orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(90px);
+  opacity: 0.5;
+}
+.orb-a {
+  width: 520px; height: 520px;
+  left: -180px; top: 28%;
+  background: rgba(34, 211, 238, 0.16);
+  animation: float 18s ease-in-out infinite;
+}
+.orb-b {
+  width: 460px; height: 460px;
+  right: -140px; top: 8%;
+  background: rgba(160, 120, 255, 0.16);
+  animation: float 22s ease-in-out infinite reverse;
+}
+.grid-lines {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.032) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.032) 1px, transparent 1px);
+  background-size: 64px 64px;
+  mask-image: radial-gradient(800px 600px at 50% 30%, #000 20%, transparent 78%);
+  -webkit-mask-image: radial-gradient(800px 600px at 50% 30%, #000 20%, transparent 78%);
+}
+@keyframes float {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(24px, -32px, 0); }
+}
+
+/* ————— шапка ————— */
+.topbar {
+  max-width: 1260px;
+  margin: 0 auto;
+  padding: 26px 28px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+.brand { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.logo {
+  width: 46px; height: 46px;
+  display: grid; place-items: center;
+  border-radius: 14px;
+  color: #061019;
+  background: linear-gradient(140deg, #7ff0ff, #38bdf8 42%, #818cf8);
+  box-shadow: 0 10px 30px -10px rgba(56, 189, 248, 0.75);
+  flex: 0 0 auto;
+}
+.brand-text h1 {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+.brand-text p {
+  margin: 3px 0 0;
+  font-size: 12px;
+  color: var(--muted-2);
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+.netinfo { display: flex; gap: 26px; flex-wrap: wrap; justify-content: flex-end; }
+.netinfo-item { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.netinfo-item .k {
+  font-size: 10px;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+  color: var(--muted-2);
+}
+.netinfo-item .v {
+  font-size: 13px;
+  color: var(--text);
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mono { font-family: "JetBrains Mono", "Cascadia Code", Consolas, monospace; font-size: 12.5px; }
+
+/* ————— баннер ошибки ————— */
+.banner {
+  max-width: 1260px;
+  margin: 0 28px 8px;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #ffdfe4;
+  background: rgba(255, 90, 110, 0.1);
+  border: 1px solid rgba(255, 90, 110, 0.32);
+  border-radius: 14px;
+  font-size: 13.5px;
+}
+.banner[hidden] { display: none; }
+.banner-x {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.7;
+}
+.banner-x:hover { opacity: 1; }
+
+/* ————— сетка ————— */
+.layout {
+  max-width: 1260px;
+  margin: 0 auto;
+  padding: 8px 28px 22px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.02fr) minmax(0, 0.98fr);
+  gap: 22px;
+  align-items: start;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+/* ————— карточка со шкалой ————— */
+.gauge-card {
+  position: relative;
+  padding: 20px 26px 22px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow: hidden;
+}
+.gauge-card::before {
+  content: "";
+  position: absolute;
+  inset: -40% -20% auto;
+  height: 420px;
+  background: radial-gradient(closest-side, rgba(56, 225, 255, 0.14), transparent 72%);
+  pointer-events: none;
+}
+
+.phase {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid var(--line);
+  font-size: 12.5px;
+  letter-spacing: 0.3px;
+  color: var(--muted);
+  align-self: flex-start;
+  z-index: 1;
+}
+.phase .dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--muted-2);
+  box-shadow: 0 0 0 0 rgba(56, 225, 255, 0.5);
+}
+body[data-phase="ping"] .dot,
+body[data-phase="down"] .dot,
+body[data-phase="up"] .dot {
+  background: var(--down);
+  animation: pulse 1.4s ease-out infinite;
+}
+body[data-phase="done"] .dot { background: #4ade80; }
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 rgba(56, 225, 255, 0.55); }
+  70% { box-shadow: 0 0 0 9px rgba(56, 225, 255, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(56, 225, 255, 0); }
+}
+
+.gauge {
+  position: relative;
+  width: min(100%, 500px);
+  aspect-ratio: 600 / 430;
+  margin: 22px 0 0;
+  z-index: 1;
+}
+.gauge svg { width: 100%; height: 100%; display: block; overflow: visible; }
+
+.arc-track {
+  stroke: rgba(255, 255, 255, 0.07);
+  stroke-width: 15;
+  stroke-linecap: round;
+}
+.arc-progress {
+  stroke: url(#arcGrad);
+  stroke-width: 15;
+  stroke-linecap: round;
+  filter: url(#softGlow);
+  transition: stroke-dashoffset 0.12s linear;
+}
+
+.ticks line { stroke: rgba(255, 255, 255, 0.2); stroke-width: 2; stroke-linecap: round; }
+.ticks line.major { stroke: rgba(255, 255, 255, 0.42); stroke-width: 3; }
+.ticks text {
+  fill: var(--muted-2);
+  font-size: 19px;
+  font-weight: 600;
+  font-family: inherit;
+  text-anchor: middle;
+  dominant-baseline: middle;
+}
+
+.needle-line {
+  stroke: #e6f6ff;
+  stroke-width: 4.5;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 10px rgba(125, 211, 252, 0.85));
+}
+.needle-hub { fill: url(#hubGrad); }
+.needle { transition: none; }
+
+.readout {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding-top: 26%;
+  pointer-events: none;
+}
+.readout .value {
+  font-size: clamp(54px, 8.4vw, 84px);
+  font-weight: 700;
+  line-height: 0.98;
+  letter-spacing: -0.045em;
+  font-variant-numeric: tabular-nums;
+  background: linear-gradient(180deg, #ffffff 30%, #9fd6ff 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.readout .unit {
+  margin-top: 6px;
+  font-size: 13px;
+  letter-spacing: 2.6px;
+  text-transform: uppercase;
+  color: var(--muted-2);
+}
+body[data-phase="done"] .readout .value {
+  background: linear-gradient(180deg, #ffffff 30%, #c4b5fd 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+.cta {
+  margin-top: 10px;
+  width: min(100%, 260px);
+  height: 62px;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 3px;
+  color: #04121d;
+  background: linear-gradient(120deg, #6ff2ff, #38bdf8 46%, #8b7bff);
+  box-shadow: 0 18px 44px -18px rgba(56, 189, 248, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  transition: transform 0.16s ease, box-shadow 0.2s ease, filter 0.2s ease;
+}
+.cta:hover { transform: translateY(-2px); box-shadow: 0 24px 52px -18px rgba(56, 189, 248, 0.95), inset 0 1px 0 rgba(255, 255, 255, 0.55); }
+.cta:active { transform: translateY(0) scale(0.985); }
+.cta:focus-visible { outline: 2px solid #bae6fd; outline-offset: 4px; }
+body[data-phase="ping"] .cta,
+body[data-phase="down"] .cta,
+body[data-phase="up"] .cta {
+  background: transparent;
+  color: #ffd9df;
+  border: 1px solid rgba(255, 114, 136, 0.55);
+  box-shadow: none;
+  letter-spacing: 2px;
+}
+
+.minis {
+  display: flex;
+  gap: 30px;
+  margin-top: 20px;
+  z-index: 1;
+}
+.mini { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.mini .k { font-size: 10.5px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--muted-2); }
+.mini .v { font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.opts {
+  display: flex;
+  gap: 22px;
+  margin-top: 20px;
+  flex-wrap: wrap;
+  justify-content: center;
+  z-index: 1;
+}
+.opt-group { display: flex; align-items: center; gap: 6px; }
+.opt-k { font-size: 10.5px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--muted-2); margin-right: 2px; }
+.opt {
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--muted);
+  font: inherit;
+  font-size: 12.5px;
+  padding: 6px 12px;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: 0.15s ease;
+}
+.opt:hover { color: var(--text); background: rgba(255, 255, 255, 0.08); }
+.opt.is-on {
+  color: #c8f6ff;
+  border-color: rgba(56, 225, 255, 0.45);
+  background: rgba(56, 225, 255, 0.12);
+}
+.opt:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.hint {
+  margin: 14px 0 0;
+  font-size: 11.5px;
+  color: var(--muted-2);
+  text-align: center;
+}
+.hint kbd {
+  font-family: inherit;
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  border: 1px solid var(--line-strong);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* ————— правая колонка ————— */
+.side { display: flex; flex-direction: column; gap: 16px; }
+
+.chart-card { padding: 20px 20px 14px; }
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+.card-head h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.legend { display: flex; gap: 16px; font-size: 11.5px; color: var(--muted-2); }
+.lg { display: inline-flex; align-items: center; gap: 6px; }
+.lg::before { content: ""; width: 9px; height: 9px; border-radius: 3px; display: block; }
+.lg-down::before { background: var(--down); box-shadow: 0 0 10px rgba(56, 225, 255, 0.6); }
+.lg-up::before { background: var(--up); box-shadow: 0 0 10px rgba(167, 139, 250, 0.6); }
+
+.chart-wrap { position: relative; height: 100%; min-height: 220px; }
+#chart { width: 100%; height: 220px; display: block; }
+.chart-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 12.5px;
+  color: var(--muted-2);
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+.chart-empty.is-hidden { opacity: 0; }
+
+.stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.stat { padding: 16px 18px 14px; position: relative; overflow: hidden; }
+.stat::after {
+  content: "";
+  position: absolute;
+  left: 18px; right: 18px; bottom: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent, rgba(255, 255, 255, 0.2)), transparent);
+  opacity: 0.55;
+}
+.stat[data-kind="down"] { --accent: var(--down); }
+.stat[data-kind="up"] { --accent: var(--up); }
+.stat[data-kind="ping"] { --accent: var(--ping); }
+.stat[data-kind="jit"] { --accent: #7dd3fc; }
+.stat-k {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--muted-2);
+}
+.stat-k .arrow { font-size: 13px; color: var(--accent); }
+.stat-v {
+  margin-top: 8px;
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+}
+.stat-v span {
+  font-size: 27px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: #f2f7ff;
+}
+.stat-v em { font-style: normal; font-size: 11.5px; color: var(--muted-2); }
+
+/* ————— история ————— */
+.history-card {
+  max-width: 1260px;
+  margin: 0 auto 26px;
+  padding: 20px 22px 10px;
+  display: block;
+}
+.history-card[hidden] { display: none; }
+.history-actions { display: flex; gap: 8px; }
+.ghost {
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  padding: 7px 12px;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: 0.15s ease;
+}
+.ghost:hover { color: var(--text); background: rgba(255, 255, 255, 0.08); }
+.ghost-danger:hover { color: #ffc9d1; border-color: rgba(255, 114, 136, 0.5); background: rgba(255, 114, 136, 0.1); }
+.table-scroll { overflow-x: auto; }
+.history { width: 100%; border-collapse: collapse; font-size: 13px; }
+.history th {
+  text-align: left;
+  font-weight: 500;
+  font-size: 10.5px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--muted-2);
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+.history td {
+  padding: 11px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.045);
+  color: #d5deee;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.history tbody tr:last-child td { border-bottom: 0; }
+.history tbody tr:hover td { background: rgba(255, 255, 255, 0.025); }
+.history td.strong { color: #fff; font-weight: 600; }
+.history td.dim { color: var(--muted-2); }
+.history .badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  background: rgba(56, 225, 255, 0.1);
+  border: 1px solid rgba(56, 225, 255, 0.22);
+  color: #a8ecff;
+}
+.history .badge.up { background: rgba(167, 139, 250, 0.1); border-color: rgba(167, 139, 250, 0.24); color: #d4c7ff; }
+
+.foot {
+  max-width: 1260px;
+  margin: 0 auto;
+  padding: 0 28px 30px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--muted-2);
+}
+.dot-sep { opacity: 0.5; }
+
+/* ————— адаптив ————— */
+@media (max-width: 1080px) {
+  .layout { grid-template-columns: 1fr; }
+  .gauge { width: min(100%, 430px); }
+}
+@media (max-width: 720px) {
+  .topbar { flex-direction: column; align-items: flex-start; padding: 20px 18px 12px; gap: 14px; }
+  .netinfo { gap: 18px; justify-content: flex-start; flex-wrap: wrap; }
+  .netinfo-item .v { max-width: 150px; }
+  .layout { padding: 6px 16px 18px; gap: 16px; }
+  .foot { padding: 0 18px 24px; }
+  .dot-sep { display: none; }
+  .gauge-card { padding: 16px 16px 18px; }
+  .readout .value { font-size: 56px; }
+  .minis { gap: 20px; }
+  .opts { gap: 12px; }
+  .chart-card { padding: 16px 14px 10px; }
+  .history-card { margin: 0 16px 20px; padding: 16px 14px 6px; }
+  .stats { gap: 12px; }
+  .stat { padding: 14px 14px 12px; }
+  .stat-v span { font-size: 23px; }
+  .hint-key { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; }
+}
+
+</style>
+</head>
+<body data-phase="idle">
+<div class="bg" aria-hidden="true">
+  <span class="orb orb-a"></span>
+  <span class="orb orb-b"></span>
+  <span class="grid-lines"></span>
+</div>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="logo" aria-hidden="true">
+      <svg viewBox="0 0 32 32" width="30" height="30"><path d="M17.5 2 6 19h6.4L11 30l11.8-17.2h-6.9L17.5 2Z" fill="currentColor"/></svg>
+    </span>
+    <div class="brand-text">
+      <h1>Спидометр</h1>
+      <p>скорость интернета · Cloudflare edge</p>
+    </div>
+  </div>
+
+  <div class="netinfo">
+    <div class="netinfo-item">
+      <span class="k">Провайдер</span>
+      <span class="v" id="ispName">определяем…</span>
+    </div>
+    <div class="netinfo-item">
+      <span class="k">IP-адрес</span>
+      <span class="v mono" id="ipValue">—</span>
+    </div>
+    <div class="netinfo-item">
+      <span class="k">Сервер</span>
+      <span class="v" id="serverName">Cloudflare</span>
+    </div>
+  </div>
+</header>
+
+<div class="banner" id="banner" role="alert" hidden>
+  <span id="bannerText"></span>
+  <button type="button" class="banner-x" id="bannerClose" aria-label="Скрыть">×</button>
+</div>
+
+<main class="layout">
+  <section class="card gauge-card" aria-label="Измеритель скорости">
+    <div class="phase" id="phase">
+      <span class="dot" id="phaseDot"></span>
+      <span id="phaseText">Готов к запуску</span>
+    </div>
+
+    <div class="gauge" id="gaugeWrap">
+      <svg id="gauge" viewBox="0 30 600 430" role="img" aria-label="Шкала скорости">
+        <defs>
+          <linearGradient id="arcGrad" x1="0" y1="1" x2="1" y2="0">
+            <stop offset="0" stop-color="#22d3ee" />
+            <stop offset=".45" stop-color="#4f8dff" />
+            <stop offset="1" stop-color="#a78bfa" />
+          </linearGradient>
+          <radialGradient id="hubGrad" cx=".5" cy=".35" r=".7">
+            <stop offset="0" stop-color="#eaf7ff" />
+            <stop offset="1" stop-color="#7dd3fc" />
+          </radialGradient>
+          <filter id="softGlow" x="-40%" y="-40%" width="180%" height="180%">
+            <feGaussianBlur stdDeviation="7" result="b" />
+            <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+          </filter>
+        </defs>
+
+        <path class="arc-track" id="arcTrack" fill="none" />
+        <path class="arc-progress" id="arcProgress" fill="none" />
+        <g id="ticks" class="ticks"></g>
+
+        <g id="needle" class="needle" transform="rotate(150 300 300)">
+          <line x1="300" y1="300" x2="512" y2="300" class="needle-line" />
+          <circle cx="300" cy="300" r="15" class="needle-hub" />
+        </g>
+      </svg>
+
+      <div class="readout">
+        <div class="value" id="value">0.0</div>
+        <div class="unit" id="unit">Мбит/с</div>
+      </div>
+    </div>
+
+    <button type="button" class="cta" id="startBtn">
+      <span class="cta-label" id="btnLabel">СТАРТ</span>
+    </button>
+
+    <div class="minis">
+      <div class="mini"><span class="k">Пинг</span><span class="v" id="pingMini">—</span></div>
+      <div class="mini"><span class="k">Джиттер</span><span class="v" id="jitMini">—</span></div>
+      <div class="mini"><span class="k">Время теста</span><span class="v" id="durMini">≈25 с</span></div>
+    </div>
+
+    <div class="opts">
+      <div class="opt-group" role="group" aria-label="Длительность теста">
+        <span class="opt-k">Тест</span>
+        <button type="button" class="opt" data-duration="5">5 с</button>
+        <button type="button" class="opt is-on" data-duration="10">10 с</button>
+        <button type="button" class="opt" data-duration="15">15 с</button>
+      </div>
+      <div class="opt-group" role="group" aria-label="Количество потоков">
+        <span class="opt-k">Потоки</span>
+        <button type="button" class="opt" data-streams="2">2</button>
+        <button type="button" class="opt is-on" data-streams="6">6</button>
+        <button type="button" class="opt" data-streams="12">12</button>
+      </div>
+    </div>
+
+    <p class="hint"><span class="hint-key">Пробел — запуск · </span>тест ничего не пишет на диск</p>
+  </section>
+
+  <section class="side">
+    <div class="card chart-card">
+      <div class="card-head">
+        <h2>Скорость во времени</h2>
+        <div class="legend">
+          <span class="lg lg-down">Загрузка</span>
+          <span class="lg lg-up">Выгрузка</span>
+        </div>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="chart" height="230"></canvas>
+        <div class="chart-empty" id="chartEmpty">Здесь появится график измерений</div>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="card stat" data-kind="down">
+        <div class="stat-k"><span class="arrow">↓</span> Загрузка</div>
+        <div class="stat-v"><span id="statDown">—</span><em>Мбит/с</em></div>
+      </div>
+      <div class="card stat" data-kind="up">
+        <div class="stat-k"><span class="arrow">↑</span> Выгрузка</div>
+        <div class="stat-v"><span id="statUp">—</span><em>Мбит/с</em></div>
+      </div>
+      <div class="card stat" data-kind="ping">
+        <div class="stat-k"><span class="arrow">◎</span> Пинг</div>
+        <div class="stat-v"><span id="statPing">—</span><em>мс</em></div>
+      </div>
+      <div class="card stat" data-kind="jit">
+        <div class="stat-k"><span class="arrow">≈</span> Джиттер</div>
+        <div class="stat-v"><span id="statJit">—</span><em>мс</em></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<section class="card history-card" id="historyCard" hidden aria-label="История измерений">
+  <div class="card-head">
+    <h2>История</h2>
+    <div class="history-actions">
+      <button type="button" class="ghost" id="copyBtn">Копировать результат</button>
+      <button type="button" class="ghost ghost-danger" id="clearBtn">Очистить</button>
+    </div>
+  </div>
+  <div class="table-scroll">
+    <table class="history">
+      <thead>
+        <tr><th>Когда</th><th>Загрузка</th><th>Выгрузка</th><th>Пинг</th><th>Джиттер</th><th>Провайдер</th></tr>
+      </thead>
+      <tbody id="historyBody"></tbody>
+    </table>
+  </div>
+</section>
+
+<footer class="foot">
+  <span>Измерение идёт до ближайшего узла Cloudflare по HTTP/2+ через 6 параллельных потоков.</span>
+  <span class="dot-sep">·</span>
+  <span>Результат зависит от маршрута до узла и нагрузки на устройство.</span>
+</footer>
+
+<script>
+/* ============================================================
+   Спидометр — браузерный тест скорости интернета.
+   Замер идёт до ближайшего узла Cloudflare: __down / __up.
+   Никаких зависимостей, всё считается на клиенте.
+   ============================================================ */
+(() => {
+  'use strict';
+
+  const CF = 'https://speed.cloudflare.com';
+  const GAUGE = { cx: 300, cy: 300, rArc: 252, a0: 150, a1: 390 };
+  const SCALE = [0, 1, 2, 5, 10, 25, 50, 100, 250, 500, 1000]; // подписи на шкале, Мбит/с
+
+  const DEFAULTS = {
+    duration: 10,        // секунд на каждое направление (без прогрева)
+    streams: 6,          // параллельных потоков
+    warmup: 1200,        // мс прогрева: TCP/QUIC-разгон не учитываем
+    downChunk: 20 * 1024 * 1024,
+    upChunk: 1024 * 1024,   // стартовый кусок, дальше подстраивается под скорость
+    upStreams: 4,
+    pingCount: 10,
+  };
+
+  const $ = (id) => document.getElementById(id);
+  const refs = {
+    gaugeWrap: $('gaugeWrap'),
+    arcTrack: $('arcTrack'),
+    arcProgress: $('arcProgress'),
+    ticks: $('ticks'),
+    needle: $('needle'),
+    value: $('value'),
+    unit: $('unit'),
+    phase: $('phase'),
+    phaseText: $('phaseText'),
+    phaseDot: $('phaseDot'),
+    startBtn: $('startBtn'),
+    btnLabel: $('btnLabel'),
+    pingMini: $('pingMini'),
+    jitMini: $('jitMini'),
+    durMini: $('durMini'),
+    statDown: $('statDown'),
+    statUp: $('statUp'),
+    statPing: $('statPing'),
+    statJit: $('statJit'),
+    chart: $('chart'),
+    chartEmpty: $('chartEmpty'),
+    ispName: $('ispName'),
+    ipValue: $('ipValue'),
+    serverName: $('serverName'),
+    banner: $('banner'),
+    bannerText: $('bannerText'),
+    bannerClose: $('bannerClose'),
+    historyCard: $('historyCard'),
+    historyBody: $('historyBody'),
+    copyBtn: $('copyBtn'),
+    clearBtn: $('clearBtn'),
+  };
+
+  const state = {
+    cfg: { ...DEFAULTS },
+    running: false,
+    cancelled: false,
+    phase: 'idle',
+    ctrl: null,
+    testStart: 0,
+    arcLen: 0,
+    display: 0,          // сглаженное значение на табло
+    target: 0,           // мгновенная цель для табло
+    series: { down: [], up: [] },
+    phaseEdge: null,     // время (с) границы загрузка→выгрузка
+    last: { down: null, up: null, ping: null, jitter: null },
+    info: { ip: null, isp: null, city: null, colo: null },
+    dirty: true,
+    raf: null,
+  };
+
+  /* ————————————————————————————————
+     Утилиты
+     ———————————————————————————————— */
+  const fmt = (v, d = 1) =>
+    v == null || !isFinite(v) ? '—' : v.toFixed(d);
+
+  const median = (arr) => {
+    if (!arr.length) return NaN;
+    const s = [...arr].sort((a, b) => a - b);
+    const m = s.length >> 1;
+    return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+  };
+
+  const mean = (arr) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : NaN);
+  const stdev = (arr) => {
+    if (arr.length < 2) return NaN;
+    const m = mean(arr);
+    return Math.sqrt(mean(arr.map((x) => (x - m) ** 2)));
+  };
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const now = () => performance.now();
+
+  class Cancelled extends Error {
+    constructor() { super('cancelled'); this.name = 'Cancelled'; }
+  }
+
+  /* ————————————————————————————————
+     Шкала: значение → доля оборота 0..1
+     ———————————————————————————————— */
+  function toFrac(v) {
+    if (!(v > 0)) return 0;
+    for (let i = 1; i < SCALE.length; i++) {
+      if (v <= SCALE[i]) {
+        const lo = SCALE[i - 1];
+        const hi = SCALE[i];
+        if (lo <= 0) return (v / hi) / (SCALE.length - 1);
+        const t = Math.log(v / lo) / Math.log(hi / lo);
+        return (i - 1 + t) / (SCALE.length - 1);
+      }
+    }
+    return 1;
+  }
+
+  const angleFor = (v) => GAUGE.a0 + toFrac(v) * (GAUGE.a1 - GAUGE.a0);
+
+  function polar(r, deg) {
+    const a = (deg * Math.PI) / 180;
+    return [GAUGE.cx + r * Math.cos(a), GAUGE.cy + r * Math.sin(a)];
+  }
+
+  function arcPath(r, a0, a1, dir = 1) {
+    const [x0, y0] = polar(r, a0);
+    const [x1, y1] = polar(r, a1);
+    const large = Math.abs(a1 - a0) > 180 ? 1 : 0;
+    return `M ${x0.toFixed(2)} ${y0.toFixed(2)} A ${r} ${r} 0 ${large} ${dir} ${x1.toFixed(2)} ${y1.toFixed(2)}`;
+  }
+
+  function buildGauge() {
+    const d = arcPath(GAUGE.rArc, GAUGE.a0, GAUGE.a1);
+    refs.arcTrack.setAttribute('d', d);
+    refs.arcProgress.setAttribute('d', d);
+
+    const len = refs.arcProgress.getTotalLength();
+    state.arcLen = len;
+    refs.arcProgress.style.strokeDasharray = `${len} ${len}`;
+    refs.arcProgress.style.strokeDashoffset = String(len);
+
+    const frag = document.createDocumentFragment();
+    const ns = 'http://www.w3.org/2000/svg';
+
+    // мелкие деления между подписями
+    for (let i = 0; i < SCALE.length - 1; i++) {
+      const a0 = angleFor(SCALE[i]);
+      const a1 = angleFor(SCALE[i + 1]);
+      for (let k = 1; k < 4; k++) {
+        const a = a0 + ((a1 - a0) * k) / 4;
+        const [x1, y1] = polar(228, a);
+        const [x2, y2] = polar(240, a);
+        const line = document.createElementNS(ns, 'line');
+        line.setAttribute('x1', x1); line.setAttribute('y1', y1);
+        line.setAttribute('x2', x2); line.setAttribute('y2', y2);
+        frag.appendChild(line);
+      }
+    }
+
+    // крупные деления + подписи
+    for (const v of SCALE) {
+      const a = angleFor(v);
+      const [x1, y1] = polar(222, a);
+      const [x2, y2] = polar(240, a);
+      const line = document.createElementNS(ns, 'line');
+      line.setAttribute('x1', x1); line.setAttribute('y1', y1);
+      line.setAttribute('x2', x2); line.setAttribute('y2', y2);
+      line.setAttribute('class', 'major');
+      frag.appendChild(line);
+
+      const [tx, ty] = polar(202, a);
+      const text = document.createElementNS(ns, 'text');
+      text.setAttribute('x', tx); text.setAttribute('y', ty);
+      text.textContent = String(v);
+      frag.appendChild(text);
+    }
+    refs.ticks.replaceChildren(frag);
+
+    document.querySelectorAll('.needle-line').forEach((el) => {
+      el.setAttribute('x2', String(GAUGE.cx + 168));
+    });
+  }
+
+  /* ————————————————————————————————
+     Кадр: игла, табло, график
+     ———————————————————————————————— */
+  let lastDraw = 0;
+  function frame(ts) {
+    state.raf = requestAnimationFrame(frame);
+
+    state.display += (state.target - state.display) * 0.13;
+    if (Math.abs(state.target - state.display) < 0.005) state.display = state.target;
+
+    const frac = toFrac(state.display);
+    const ang = GAUGE.a0 + frac * (GAUGE.a1 - GAUGE.a0);
+    refs.needle.setAttribute('transform', `rotate(${ang} ${GAUGE.cx} ${GAUGE.cy})`);
+    if (state.arcLen) {
+      refs.arcProgress.style.strokeDashoffset = String(state.arcLen * (1 - frac));
+    }
+
+    const txt = fmt(state.display, 1);
+    if (refs.value.textContent !== txt) refs.value.textContent = txt;
+
+    if (state.dirty && ts - lastDraw > 40) {
+      lastDraw = ts;
+      state.dirty = false;
+      drawChart();
+    }
+  }
+
+  /* ————————————————————————————————
+     График скорости
+     ———————————————————————————————— */
+  function niceMax(v) {
+    const steps = [10, 25, 50, 100, 250, 500, 1000, 2000, 5000, 10000];
+    for (const s of steps) if (v <= s * 0.92) return s;
+    return Math.ceil(v / 1000) * 1000;
+  }
+
+  function drawChart() {
+    const cvs = refs.chart;
+    const rect = cvs.getBoundingClientRect();
+    const w = Math.max(120, Math.round(rect.width));
+    const h = 220;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    if (cvs.width !== Math.round(w * dpr) || cvs.height !== Math.round(h * dpr)) {
+      cvs.width = Math.round(w * dpr);
+      cvs.height = Math.round(h * dpr);
+    }
+    const ctx = cvs.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+
+    const pad = { l: 38, r: 10, t: 12, b: 22 };
+    const iw = w - pad.l - pad.r;
+    const ih = h - pad.t - pad.b;
+
+    const all = [...state.series.down, ...state.series.up];
+    const maxV = niceMax(Math.max(1, ...all.map((p) => p.v || 0)));
+    const maxT = Math.max(5, ...all.map((p) => p.t || 0));
+    const xMax = Math.ceil(maxT / 5) * 5;
+
+    const X = (t) => pad.l + (t / xMax) * iw;
+    const Y = (v) => pad.t + ih - (Math.min(v, maxV) / maxV) * ih;
+
+    // сетка
+    ctx.font = '10px Inter, "Segoe UI", sans-serif';
+    ctx.textBaseline = 'middle';
+    for (let i = 0; i <= 5; i++) {
+      const y = pad.t + (ih * i) / 5;
+      ctx.strokeStyle = 'rgba(255,255,255,0.055)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(pad.l, y + 0.5);
+      ctx.lineTo(w - pad.r, y + 0.5);
+      ctx.stroke();
+
+      const val = maxV - (maxV * i) / 5;
+      ctx.fillStyle = 'rgba(139,155,182,0.7)';
+      ctx.textAlign = 'right';
+      ctx.fillText(val >= 1000 ? (val / 1000).toFixed(1) + 'k' : String(Math.round(val)), pad.l - 8, y);
+    }
+
+    // ось X
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    for (let t = 0; t <= xMax; t += 5) {
+      const x = X(t);
+      ctx.fillStyle = 'rgba(139,155,182,0.55)';
+      ctx.fillText(t + ' с', x, pad.t + ih + 8);
+    }
+
+    // граница фаз
+    if (state.phaseEdge != null && state.phaseEdge <= xMax) {
+      const x = X(state.phaseEdge);
+      ctx.save();
+      ctx.setLineDash([3, 5]);
+      ctx.strokeStyle = 'rgba(255,255,255,0.16)';
+      ctx.beginPath();
+      ctx.moveTo(x, pad.t);
+      ctx.lineTo(x, pad.t + ih);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    const drawSeries = (pts, color1, color2) => {
+      if (pts.length < 2) return;
+      // лёгкое сглаживание только для отрисовки: итоговые цифры считаются по сырым данным
+      const sm = pts.map((p, i) => {
+        const a = pts[Math.max(0, i - 1)];
+        const b = pts[Math.min(pts.length - 1, i + 1)];
+        return { t: p.t, v: (a.v + p.v * 2 + b.v) / 4 };
+      });
+      const grad = ctx.createLinearGradient(0, pad.t, 0, pad.t + ih);
+      grad.addColorStop(0, color1);
+      grad.addColorStop(1, color2);
+
+      ctx.beginPath();
+      ctx.moveTo(X(sm[0].t), pad.t + ih);
+      for (const p of sm) ctx.lineTo(X(p.t), Y(p.v));
+      ctx.lineTo(X(sm[sm.length - 1].t), pad.t + ih);
+      ctx.closePath();
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      ctx.beginPath();
+      let first = true;
+      for (const p of sm) {
+        const x = X(p.t);
+        const y = Y(p.v);
+        if (first) { ctx.moveTo(x, y); first = false; } else ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = color1.includes('56,225') ? '#38e1ff' : '#a78bfa';
+      ctx.lineWidth = 2;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      ctx.stroke();
+    };
+
+    drawSeries(state.series.down, 'rgba(56,225,255,0.30)', 'rgba(56,225,255,0)');
+    drawSeries(state.series.up, 'rgba(167,139,250,0.30)', 'rgba(167,139,250,0)');
+
+    // текущая точка
+    if (state.running) {
+      const pts = all;
+      if (pts.length) {
+        const p = pts[pts.length - 1];
+        ctx.beginPath();
+        ctx.arc(X(p.t), Y(p.v), 3.2, 0, Math.PI * 2);
+        ctx.fillStyle = '#fff';
+        ctx.shadowColor = 'rgba(56,225,255,0.9)';
+        ctx.shadowBlur = 10;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      }
+    }
+  }
+
+  /* ————————————————————————————————
+     Информация о сети: IP и провайдер
+     ———————————————————————————————— */
+  const GEO_KEY = 'speedmeter.geo.v1';
+  const GEO_TTL = 6 * 60 * 60 * 1000;
+
+  async function fetchJson(url, ms = 4000) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), ms);
+    try {
+      const res = await fetch(url, { signal: ctrl.signal, cache: 'no-store' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  // несколько сервисов подряд: у каждого свой лимит и свои сбои
+  const GEO_PROVIDERS = [
+    {
+      url: 'https://api.ip.sb/geoip',
+      parse: (j) => ({ ip: j.ip, isp: j.isp || j.organization || j.asn_organization, city: j.city }),
+    },
+    {
+      url: 'https://ipinfo.io/json',
+      parse: (j) => ({ ip: j.ip, isp: j.org, city: j.city }),
+    },
+    {
+      url: 'https://ipwho.is/',
+      parse: (j) => (j && j.success === false ? null : { ip: j.ip, isp: j.connection?.isp || j.connection?.org, city: j.city }),
+    },
+  ];
+
+  function applyGeo(g) {
+    if (!g) return;
+    if (g.ip) state.info.ip = g.ip;
+    if (g.isp) state.info.isp = g.isp;
+    if (g.city) state.info.city = g.city;
+    refs.ispName.textContent = state.info.isp
+      ? (state.info.city ? `${state.info.isp} · ${state.info.city}` : state.info.isp)
+      : 'неизвестно';
+    if (state.info.ip) refs.ipValue.textContent = state.info.ip;
+  }
+
+  async function loadNetworkInfo() {
+    // IP берём из заголовка Cloudflare — он точнее любого гео-сервиса
+    try {
+      const res = await fetch(`${CF}/__down?bytes=1&r=${Math.random()}`, { cache: 'no-store' });
+      const ip = res.headers.get('cf-meta-ip');
+      const colo = res.headers.get('cf-meta-colo');
+      if (ip) state.info.ip = ip;
+      if (colo) state.info.colo = colo;
+    } catch { /* без паники: просто не покажем IP */ }
+
+    if (state.info.ip) refs.ipValue.textContent = state.info.ip;
+
+    // кэшируем провайдера: у бесплатных гео-API жёсткие лимиты
+    try {
+      const raw = localStorage.getItem(GEO_KEY);
+      if (raw) {
+        const c = JSON.parse(raw);
+        if (c && c.isp && Date.now() - c.ts < GEO_TTL) {
+          applyGeo(c);
+          refs.serverName.textContent = state.info.colo ? `Cloudflare · ${state.info.colo}` : 'Cloudflare Edge';
+          return;
+        }
+      }
+    } catch { /* noop */ }
+
+    for (const p of GEO_PROVIDERS) {
+      try {
+        const g = p.parse(await fetchJson(p.url));
+        if (g && g.isp) {
+          applyGeo(g);
+          try { localStorage.setItem(GEO_KEY, JSON.stringify({ ...g, ts: Date.now() })); } catch { /* noop */ }
+          break;
+        }
+      } catch { /* пробуем следующий */ }
+    }
+
+    if (!state.info.isp) refs.ispName.textContent = 'неизвестно';
+    refs.serverName.textContent = state.info.colo ? `Cloudflare · ${state.info.colo}` : 'Cloudflare Edge';
+  }
+
+  /* ————————————————————————————————
+     Задержка и джиттер
+     ———————————————————————————————— */
+  async function measureLatency() {
+    setPhase('ping', 'Измеряем задержку…');
+    const ctrl = new AbortController();
+    state.ctrl = ctrl;
+    const samples = [];
+
+    for (let i = 0; i < state.cfg.pingCount; i++) {
+      if (state.cancelled) throw new Cancelled();
+      const t0 = now();
+      try {
+        const res = await fetch(`${CF}/__down?bytes=1&r=${Math.random()}`, {
+          cache: 'no-store', signal: ctrl.signal,
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const reader = res.body.getReader();
+        await reader.read();
+        await reader.cancel();
+      } catch (e) {
+        if (state.cancelled || ctrl.signal.aborted) throw new Cancelled();
+        throw e;
+      }
+      samples.push(now() - t0);
+      const live = median(samples);
+      refs.pingMini.textContent = `${fmt(live, 0)} мс`;
+      refs.statPing.textContent = fmt(live, 0);
+      state.target = 0;
+      await sleep(45);
+    }
+
+    const clean = samples.slice(2);
+    const ping = median(clean.length ? clean : samples);
+    // джиттер считаем по «нормальным» замерам: один зависший запрос не должен
+    // превращать 2 мс в 400 мс
+    const pool = clean.length >= 4
+      ? clean.filter((x) => x > ping * 0.35 && x < ping * 3)
+      : clean;
+    const jitter = stdev(pool.length > 1 ? pool : clean);
+    refs.pingMini.textContent = `${fmt(ping, 0)} мс`;
+    refs.statPing.textContent = fmt(ping, 0);
+    refs.statJit.textContent = fmt(jitter, 1);
+    refs.jitMini.textContent = `${fmt(jitter, 1)} мс`;
+    return { ping, jitter };
+  }
+
+  /* ————————————————————————————————
+     Загрузка (download)
+     ———————————————————————————————— */
+  async function downloadWorker(st, signal) {
+    const chunk = state.cfg.downChunk;
+    while (!signal.aborted && now() < st.stopAt) {
+      let res;
+      try {
+        res = await fetch(`${CF}/__down?bytes=${chunk}&r=${Math.random()}`, {
+          cache: 'no-store', signal,
+        });
+      } catch (e) {
+        if (e && e.name === 'AbortError') return;
+        throw e;
+      }
+      if (!res.ok || !res.body) return;
+      const reader = res.body.getReader();
+      try {
+        // читаем и считаем байты прямо на лету
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          st.bytes += value.byteLength;
+          if (signal.aborted || now() >= st.stopAt) {
+            try { await reader.cancel(); } catch { /* noop */ }
+            return;
+          }
+        }
+      } catch (e) {
+        if (e && e.name === 'AbortError') return;
+        throw e;
+      }
+    }
+  }
+
+  async function measureDownload() {
+    setPhase('down', 'Проверяем загрузку…');
+    const ctrl = new AbortController();
+    state.ctrl = ctrl;
+    const cfg = state.cfg;
+    const t0 = now();
+    const st = { bytes: 0, stopAt: t0 + cfg.warmup + cfg.duration * 1000 };
+
+    const samples = [{ t: 0, b: 0 }];
+    let prev = { t: 0, b: 0 };
+
+    const sampler = setInterval(() => {
+      const t = now() - t0;
+      const globalT = (now() - state.testStart) / 1000;
+      samples.push({ t, b: st.bytes });
+      const dt = (t - prev.t) / 1000;
+      if (dt > 0.05) {
+        const inst = ((st.bytes - prev.b) * 8) / 1e6 / dt;
+        prev = { t, b: st.bytes };
+        if (t > cfg.warmup) state.target = inst;
+        state.series.down.push({ t: globalT, v: Math.max(0, inst) });
+        state.dirty = true;
+      }
+      if (now() >= st.stopAt && !ctrl.signal.aborted) ctrl.abort();
+    }, 200);
+
+    const workers = Array.from({ length: cfg.streams }, () => downloadWorker(st, ctrl.signal).catch(() => {}));
+    await Promise.all(workers);
+    clearInterval(sampler);
+
+    const tEnd = now() - t0;
+    samples.push({ t: tEnd, b: st.bytes });
+
+    const base = samples.find((s) => s.t >= cfg.warmup) || samples[0];
+    const end = samples[samples.length - 1];
+    const span = Math.max(0.25, (end.t - base.t) / 1000);
+    const mbps = ((end.b - base.b) * 8) / 1e6 / span;
+
+    if (state.cancelled) throw new Cancelled();
+    if (st.bytes === 0) throw new Error('Не удалось скачать данные с speed.cloudflare.com');
+
+    state.target = mbps;
+    refs.statDown.textContent = fmt(mbps, 1);
+    state.phaseEdge = (now() - state.testStart) / 1000;
+    state.dirty = true;
+    return mbps;
+  }
+
+  /* ————————————————————————————————
+     Выгрузка (upload).
+     XHR-прогресс в Chrome занижает поток (~15–20%), поэтому шлём fetch-ем
+     кусками и считаем скорость каждого куска по времени его доставки.
+     ———————————————————————————————— */
+  function makePayload(bytes) {
+    const buf = new Uint8Array(bytes);
+    const step = 65536;
+    for (let i = 0; i < bytes; i += step) {
+      const end = Math.min(i + step, bytes);
+      crypto.getRandomValues(buf.subarray(i, end));
+    }
+    return buf;
+  }
+
+  const payloadCache = new Map();
+  function payloadOf(size) {
+    let p = payloadCache.get(size);
+    if (!p) {
+      p = makePayload(size);
+      if (payloadCache.size > 8) payloadCache.clear();
+      payloadCache.set(size, p);
+    }
+    return p;
+  }
+
+  async function uploadWorker(st, ctrl) {
+    const signal = ctrl.signal;
+    while (!signal.aborted && !state.cancelled && now() < st.stopAt) {
+      const size = st.chunk;
+      const payload = payloadOf(size);
+      const t0 = now();
+      let res;
+      try {
+        res = await fetch(`${CF}/__up?r=${Math.random()}`, {
+          method: 'POST', body: payload, cache: 'no-store', signal,
+        });
+      } catch (e) {
+        if (e && e.name === 'AbortError') return;
+        st.failures++;
+        await sleep(150);
+        continue;
+      }
+      if (!res.ok) {
+        st.failures++;
+        await sleep(150);
+        continue;
+      }
+      try { await res.arrayBuffer(); } catch { /* тело ответа не важно */ }
+
+      const dt = (now() - t0) / 1000;
+      st.bytes += size;
+      // держим один запрос в районе 0,06–0,25 с — и на 2, и на 900 Мбит/с
+      if (dt < 0.06 && st.chunk < 8 * 1024 * 1024) st.chunk *= 2;
+      else if (dt > 0.25 && st.chunk > 256 * 1024) st.chunk = Math.max(256 * 1024, st.chunk >> 1);
+    }
+  }
+
+  async function measureUpload() {
+    setPhase('up', 'Проверяем выгрузку…');
+    const cfg = state.cfg;
+    const ctrl = new AbortController();
+    state.ctrl = ctrl;
+    const t0 = now();
+    const st = {
+      bytes: 0, failures: 0, chunk: cfg.upChunk,
+      stopAt: t0 + cfg.warmup + cfg.duration * 1000,
+    };
+
+    const samples = [{ t: 0, b: 0 }];
+    let prev = { t: 0, b: 0 };
+    let inst = 0;
+
+    const sampler = setInterval(() => {
+      const t = now() - t0;
+      const globalT = (now() - state.testStart) / 1000;
+      samples.push({ t, b: st.bytes });
+      const dt = (t - prev.t) / 1000;
+      if (dt > 0.05) {
+        inst = ((st.bytes - prev.b) * 8) / 1e6 / dt;
+        prev = { t, b: st.bytes };
+        if (t > cfg.warmup) state.target = inst;
+        state.series.up.push({ t: globalT, v: Math.max(0, inst) });
+        state.dirty = true;
+      }
+    }, 200);
+
+    // страховка: если запрос «залип», через 4 с после планового финиша рубим
+    const watchdog = setTimeout(() => ctrl.abort(), cfg.warmup + cfg.duration * 1000 + 4000);
+
+    const workers = Array.from({ length: cfg.upStreams }, () => uploadWorker(st, ctrl));
+    await Promise.all(workers);
+    clearInterval(sampler);
+    clearTimeout(watchdog);
+
+    if (state.cancelled) throw new Cancelled();
+    if (st.bytes === 0) throw new Error('Не удалось отправить данные на speed.cloudflare.com');
+
+    const tEnd = now() - t0;
+    samples.push({ t: tEnd, b: st.bytes });
+    const base = samples.find((s) => s.t >= cfg.warmup) || samples[0];
+    const end = samples[samples.length - 1];
+    const span = Math.max(0.25, (end.t - base.t) / 1000);
+    const mbps = ((end.b - base.b) * 8) / 1e6 / span;
+
+    state.target = mbps;
+    refs.statUp.textContent = fmt(mbps, 1);
+    state.dirty = true;
+    return mbps;
+  }
+
+  /* ————————————————————————————————
+     Фазы / кнопки / статус
+     ———————————————————————————————— */
+  function setPhase(kind, text) {
+    state.phase = kind;
+    document.body.dataset.phase = kind;
+    refs.phaseText.textContent = text;
+  }
+
+  function setRunningUI(on) {
+    refs.startBtn.classList.toggle('is-running', on);
+    refs.btnLabel.textContent = on ? 'ОСТАНОВИТЬ' : 'СТАРТ';
+    document.querySelectorAll('.opt').forEach((b) => { b.disabled = on; });
+  }
+
+  function resetRunUI() {
+    state.target = 0;
+    state.display = 0;
+    state.series = { down: [], up: [] };
+    state.phaseEdge = null;
+    state.dirty = true;
+    refs.statDown.textContent = '—';
+    refs.statUp.textContent = '—';
+    refs.statPing.textContent = '—';
+    refs.statJit.textContent = '—';
+    refs.pingMini.textContent = '—';
+    refs.jitMini.textContent = '—';
+    refs.chartEmpty.classList.remove('is-hidden');
+    drawChart();
+  }
+
+  function showBanner(msg) {
+    refs.bannerText.textContent = msg;
+    refs.banner.hidden = false;
+  }
+
+  function stopTest() {
+    if (!state.running) return;
+    state.cancelled = true;
+    try { state.ctrl?.abort(); } catch { /* noop */ }
+    refs.phaseText.textContent = 'Останавливаем…';
+  }
+
+  async function runTest() {
+    if (state.running) { stopTest(); return; }
+
+    // сброс
+    state.running = true;
+    state.cancelled = false;
+    state.testStart = now();
+    state.last = { down: null, up: null, ping: null, jitter: null };
+    resetRunUI();
+    refs.banner.hidden = true;
+    setRunningUI(true);
+    refs.chartEmpty.classList.add('is-hidden');
+
+    try {
+      const lat = await measureLatency();
+      state.last.ping = lat.ping;
+      state.last.jitter = lat.jitter;
+
+      await sleep(220);
+      const down = await measureDownload();
+      state.last.down = down;
+
+      await sleep(320);
+      const up = await measureUpload();
+      state.last.up = up;
+
+      setPhase('done', 'Тест завершён');
+      state.target = up;
+      state.dirty = true;
+      saveResult();
+    } catch (err) {
+      if (err instanceof Cancelled || state.cancelled) {
+        setPhase('idle', 'Остановлено');
+        state.target = 0;
+      } else {
+        console.error(err);
+        setPhase('idle', 'Ошибка измерения');
+        state.target = 0;
+        showBanner(
+          'Не удалось связаться с speed.cloudflare.com. ' +
+          'Проверьте интернет, VPN или блокировку Cloudflare — и попробуйте снова.'
+        );
+      }
+    } finally {
+      state.running = false;
+      state.cancelled = false;
+      setRunningUI(false);
+      state.dirty = true;
+    }
+  }
+
+  /* ————————————————————————————————
+     История результатов
+     ———————————————————————————————— */
+  const HISTORY_KEY = 'speedmeter.history.v1';
+
+  function readHistory() {
+    try {
+      const raw = localStorage.getItem(HISTORY_KEY);
+      const arr = raw ? JSON.parse(raw) : [];
+      return Array.isArray(arr) ? arr : [];
+    } catch { return []; }
+  }
+
+  function writeHistory(arr) {
+    try { localStorage.setItem(HISTORY_KEY, JSON.stringify(arr)); } catch { /* noop */ }
+  }
+
+  function saveResult() {
+    const item = {
+      ts: Date.now(),
+      down: state.last.down,
+      up: state.last.up,
+      ping: state.last.ping,
+      jitter: state.last.jitter,
+      isp: state.info.isp,
+      city: state.info.city,
+      ip: state.info.ip,
+    };
+    const arr = readHistory();
+    arr.unshift(item);
+    writeHistory(arr.slice(0, 20));
+    renderHistory();
+  }
+
+  function fmtDate(ts) {
+    const d = new Date(ts);
+    const today = new Date();
+    const sameDay = d.toDateString() === today.toDateString();
+    const time = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+    return sameDay ? `сегодня, ${time}` : `${d.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' })}, ${time}`;
+  }
+
+  function renderHistory() {
+    const arr = readHistory();
+    refs.historyCard.hidden = arr.length === 0;
+    if (!arr.length) { refs.historyBody.replaceChildren(); return; }
+
+    const frag = document.createDocumentFragment();
+    for (const it of arr) {
+      const tr = document.createElement('tr');
+      const cells = [
+        { v: fmtDate(it.ts), cls: 'dim' },
+        { v: it.down != null ? fmt(it.down, 1) : '—', cls: 'strong down-badge' },
+        { v: it.up != null ? fmt(it.up, 1) : '—', cls: 'strong up-badge' },
+        { v: it.ping != null ? fmt(it.ping, 0) : '—', cls: '' },
+        { v: it.jitter != null ? fmt(it.jitter, 1) : '—', cls: '' },
+        { v: [it.isp, it.city].filter(Boolean).join(' · ') || '—', cls: 'dim' },
+      ];
+      for (const c of cells) {
+        const td = document.createElement('td');
+        td.textContent = c.v;
+        if (c.cls) td.className = c.cls;
+        tr.appendChild(td);
+      }
+      frag.appendChild(tr);
+    }
+    refs.historyBody.replaceChildren(frag);
+  }
+
+  async function copyResult() {
+    const it = readHistory()[0];
+    if (!it) return;
+    const text =
+      `Спидометр · ${new Date(it.ts).toLocaleString('ru-RU')}\n` +
+      `Загрузка: ${fmt(it.down, 1)} Мбит/с\n` +
+      `Выгрузка: ${fmt(it.up, 1)} Мбит/с\n` +
+      `Пинг: ${fmt(it.ping, 0)} мс · Джиттер: ${fmt(it.jitter, 1)} мс` +
+      (it.isp ? `\n${it.isp}${it.city ? ', ' + it.city : ''}` : '');
+    try {
+      await navigator.clipboard.writeText(text);
+      const old = refs.copyBtn.textContent;
+      refs.copyBtn.textContent = 'Скопировано';
+      setTimeout(() => { refs.copyBtn.textContent = old; }, 1400);
+    } catch {
+      showBanner('Браузер не разрешил доступ к буферу обмена.');
+    }
+  }
+
+  /* ————————————————————————————————
+     Настройки
+     ———————————————————————————————— */
+  const CFG_KEY = 'speedmeter.cfg.v1';
+
+  function loadCfg() {
+    try {
+      const raw = localStorage.getItem(CFG_KEY);
+      if (!raw) return;
+      const j = JSON.parse(raw);
+      if (j && [5, 10, 15].includes(j.duration)) state.cfg.duration = j.duration;
+      if (j && [2, 6, 12].includes(j.streams)) state.cfg.streams = j.streams;
+    } catch { /* noop */ }
+  }
+
+  function saveCfg() {
+    try {
+      localStorage.setItem(CFG_KEY, JSON.stringify({
+        duration: state.cfg.duration,
+        streams: state.cfg.streams,
+      }));
+    } catch { /* noop */ }
+  }
+
+  function syncOptions() {
+    document.querySelectorAll('.opt[data-duration]').forEach((b) => {
+      b.classList.toggle('is-on', Number(b.dataset.duration) === state.cfg.duration);
+    });
+    document.querySelectorAll('.opt[data-streams]').forEach((b) => {
+      b.classList.toggle('is-on', Number(b.dataset.streams) === state.cfg.streams);
+    });
+    const total = Math.round(state.cfg.duration * 2 + 4);
+    refs.durMini.textContent = `≈${total} с`;
+  }
+
+  /* ————————————————————————————————
+     Инициализация
+     ———————————————————————————————— */
+  function init() {
+    loadCfg();
+    buildGauge();
+    syncOptions();
+    renderHistory();
+    state.dirty = true;
+    drawChart();
+    state.raf = requestAnimationFrame(frame);
+
+    refs.ispName.textContent = 'определяем…';
+    loadNetworkInfo();
+
+    refs.startBtn.addEventListener('click', runTest);
+
+    document.querySelectorAll('.opt').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        if (state.running) return;
+        if (btn.dataset.duration) state.cfg.duration = Number(btn.dataset.duration);
+        if (btn.dataset.streams) state.cfg.streams = Number(btn.dataset.streams);
+        saveCfg();
+        syncOptions();
+      });
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.code !== 'Space' && e.code !== 'Enter') return;
+      const tag = document.activeElement?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'BUTTON') return;
+      e.preventDefault();
+      runTest();
+    });
+
+    refs.bannerClose.addEventListener('click', () => { refs.banner.hidden = true; });
+    refs.copyBtn.addEventListener('click', copyResult);
+    refs.clearBtn.addEventListener('click', () => {
+      writeHistory([]);
+      renderHistory();
+    });
+
+    let resizeTimer = 0;
+    const onResize = () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => { state.dirty = true; }, 120);
+    };
+    window.addEventListener('resize', onResize);
+    if ('ResizeObserver' in window) {
+      new ResizeObserver(onResize).observe(refs.chart.parentElement);
+    }
+
+    // для авто-тестов и отладки
+    window.SpeedMeter = {
+      run: runTest,
+      stop: stopTest,
+      state,
+      refs,
+      info: () => ({ ...state.info, ...state.last }),
+    };
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
+
+</script>
+</body>
+</html>
